@@ -1,0 +1,123 @@
+name: Build and publish Strata ROCm (R9700)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .github/workflows/build-push.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Do not concurrently mutate :latest in the same registry repository.
+concurrency:
+  group: strata-rocm-r9700-publish
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    # Register a dedicated self-hosted Linux x86_64 runner with this label.
+    # GitHub's standard hosted runners advertise only 14 GB SSD, which is
+    # insufficient headroom for the ROCm toolchain and Docker build layers.
+    runs-on: [self-hosted, linux, x64, strata-builder]
+    timeout-minutes: 360
+    env:
+      UPSTREAM_REPOSITORY: dambaev/Strata
+      # Frozen source matching the community ROCm Dockerfile PR #1486.
+      # Change deliberately, after checking upstream compatibility.
+      UPSTREAM_SHA: 060117c4bf49e50e86ae8d79361540f9c83d77a1
+      IMAGE_REPOSITORY: strata-rocm-r9700
+      DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+
+    steps:
+      - name: Checkout our packaging repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Check Docker Hub configuration and builder resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$DOCKERHUB_NAMESPACE" ]] || { echo 'Missing Actions variable DOCKERHUB_NAMESPACE' >&2; exit 1; }
+          [[ "$DOCKERHUB_NAMESPACE" =~ ^[a-z0-9][a-z0-9_.-]*$ ]] || { echo 'Invalid Docker Hub namespace' >&2; exit 1; }
+          [[ "$(uname -m)" == "x86_64" ]] || { echo 'Builder must be x86_64' >&2; exit 1; }
+          command -v docker >/dev/null || { echo 'Docker CLI is missing' >&2; exit 1; }
+          docker info >/dev/null
+          df -h . /var/lib/docker || true
+          free -h || true
+
+      - name: Checkout pinned Strata source
+        uses: actions/checkout@v6
+        with:
+          repository: dambaev/Strata
+          ref: ${{ env.UPSTREAM_SHA }}
+          path: upstream
+          persist-credentials: false
+
+      - name: Assert exact upstream revision and generate immutable tags
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual=$(git -C upstream rev-parse HEAD)
+          [[ "$actual" == "$UPSTREAM_SHA" ]] || { echo "Unexpected upstream SHA: $actual" >&2; exit 1; }
+          src_short="${actual:0:12}"
+          image="$DOCKERHUB_NAMESPACE/$IMAGE_REPOSITORY"
+          {
+            echo "image=$image"
+            echo "source_sha=$actual"
+            echo 'tags<<TAGS'
+            echo "$image:latest"
+            echo "$image:src-$src_short"
+            echo "$image:build-${GITHUB_SHA:0:12}"
+            echo 'TAGS'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configure Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push linux/amd64
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ./upstream
+          file: ./Dockerfile
+          platforms: linux/amd64
+          build-args: |
+            HIP_ARCHITECTURES=gfx1201
+            BUILD_VISION=0
+          push: true
+          tags: ${{ steps.image.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            ai.strata.upstream=${{ steps.image.outputs.source_sha }}
+            ai.strata.gpu.arch=gfx1201
+          provenance: mode=min
+          sbom: true
+
+      - name: Verify the published image manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "${{ steps.image.outputs.image }}:build-${GITHUB_SHA:0:12}"
+          {
+            echo '## Strata ROCm image published'
+            echo '- Image: `${{ steps.image.outputs.image }}`'
+            echo '- Strata source: `${{ steps.image.outputs.source_sha }}`'
+            echo '- Architecture: `linux/amd64`, HIP `gfx1201`'
+            echo '- OCI digest: `${{ steps.build.outputs.digest }}`'
+            echo '- Tags:'
+            echo '```'
+            printf '%s\n' '${{ steps.image.outputs.tags }}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

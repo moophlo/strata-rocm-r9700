@@ -1,0 +1,9 @@
+# Local checkouts, model artifacts and build outputs are not part of the repo.
+upstream/
+models/
+*.gguf
+*.safetensors
+build/
+*.log
+.env
+*.token
