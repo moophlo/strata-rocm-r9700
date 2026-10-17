@@ -21,7 +21,7 @@ jobs:
     # Register a dedicated self-hosted Linux x86_64 runner with this label.
     # GitHub's standard hosted runners advertise only 14 GB SSD, which is
     # insufficient headroom for the ROCm toolchain and Docker build layers.
-    runs-on: [self-hosted, linux, x64, strata-builder]
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 360
     env:
       UPSTREAM_REPOSITORY: dambaev/Strata
