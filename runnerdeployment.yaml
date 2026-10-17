@@ -1,0 +1,15 @@
+apiVersion: actions.summerwind.dev/v1alpha1
+kind: RunnerDeployment
+metadata:
+  name: strata-rocm-r9700-runnerdeploy
+  namespace: github-actions
+spec:
+  replicas: 1
+  template:
+    spec:
+      repository: moophlo/strata-rocm-r9700
+      # Match the Kubernetes pod network MTU for nested Docker build traffic.
+      dockerMTU: 1450
+      # Build on a worker with sufficient local Docker storage.
+      nodeSelector:
+        kubernetes.io/hostname: docker03.mufloland.it

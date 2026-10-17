@@ -29,8 +29,8 @@ publishes them to Docker Hub, with reproducible source and build-revision tags.
 1. GitHub account with access to `moophlo` and `gh` CLI authenticated.
 2. Docker Hub namespace and an existing target repository `strata-rocm-r9700`.
 3. Docker Hub access token with permission to push to that repository.
-4. A dedicated GitHub Actions **self-hosted runner**, Linux x86-64, label
-   `strata-builder`, with Docker/Buildx access, **at least ~60 GiB free disk**
+4. A dedicated GitHub Actions **self-hosted runner**, Linux x86-64, registered
+   for this repository, with Docker/Buildx access, **at least ~60 GiB free disk**
    and preferably 16+ GiB RAM / 8+ CPU threads (capacity guidance, not measured
    minimums). Do **not** register the runner against untrusted repositories.
    The exact disk and RAM requirements will depend on the upstream compilation.
@@ -57,13 +57,13 @@ gh variable set DOCKERHUB_NAMESPACE --repo moophlo/strata-rocm-r9700 --body YOUR
 # This prompts securely for a token; do not store it in git:
 gh secret set DOCKERHUB_TOKEN --repo moophlo/strata-rocm-r9700
 
-# First register your runner in GitHub:
-# Repository -> Settings -> Actions -> Runners -> New self-hosted runner.
-# Follow GitHub's installation instructions and add custom label: strata-builder
-# Ensure the runner service account can execute `docker info` successfully.
+# Register the runner through the existing Kubernetes Actions Runner Controller.
+# Its GitHub App installation must have access to this repository.
+kubectl apply -f runnerdeployment.yaml
+kubectl -n github-actions get runnerdeployments,runners,pods
 
 git init -b main
-git add Dockerfile README.md .gitignore .github scripts
+git add Dockerfile README.md .gitignore .github scripts runnerdeployment.yaml
 git commit -m 'Initial ROCm gfx1201 image pipeline'
 git remote add origin git@github.com:moophlo/strata-rocm-r9700.git
 git push -u origin main
@@ -72,6 +72,13 @@ git push -u origin main
 The first push triggers a build. Future changes to `Dockerfile` or the workflow
 trigger a new build, and **Actions > Build and publish Strata ROCm (R9700) >
 Run workflow** permits manual rebuilds even without a code change.
+
+`runnerdeployment.yaml` uses the existing `actions.summerwind.dev/v1alpha1`
+controller in `github-actions` and places the runner on `docker03.mufloland.it`.
+It sets Docker's MTU to 1450 to match the Kubernetes pod network. Review these
+cluster-specific settings before using the manifest elsewhere. The controller
+registers the standard `self-hosted`, `Linux`, and `X64` labels automatically.
+Apply runner changes while no job is running, because they can replace the pod.
 
 If using HTTPS git auth instead of SSH, replace the origin with
 `https://github.com/moophlo/strata-rocm-r9700.git`.
