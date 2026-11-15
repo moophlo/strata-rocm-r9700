@@ -1,5 +1,6 @@
 # Local checkouts, model artifacts and build outputs are not part of the repo.
 upstream/
+dsv41-build/
 models/
 *.gguf
 *.safetensors

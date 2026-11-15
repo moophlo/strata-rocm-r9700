@@ -6,7 +6,16 @@ on:
     paths:
       - Dockerfile
       - .github/workflows/build-push.yml
+      - scripts/prepare_dsv41_context.py
+      - scripts/smoke_dsv41.sh
   workflow_dispatch:
+    inputs:
+      variant:
+        description: Image variant to build and publish
+        type: choice
+        options: [qwen, dsv41]
+        default: qwen
+        required: true
 
 permissions:
   contents: read
@@ -28,6 +37,8 @@ jobs:
       # Frozen source matching the community ROCm Dockerfile PR #1486.
       # Change deliberately, after checking upstream compatibility.
       UPSTREAM_SHA: 060117c4bf49e50e86ae8d79361540f9c83d77a1
+      DSV41_UPSTREAM_SHA: d2f096475817d4666c364c820b0ca830f751cfc5
+      VARIANT: ${{ inputs.variant || 'qwen' }}
       IMAGE_REPOSITORY: strata-rocm-r9700
       DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
 
@@ -36,6 +47,19 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: Select the pinned source and image variant
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$VARIANT" in
+            qwen) ;;
+            dsv41)
+              echo 'UPSTREAM_REPOSITORY=Niko1221/Strata' >> "$GITHUB_ENV"
+              echo "UPSTREAM_SHA=$DSV41_UPSTREAM_SHA" >> "$GITHUB_ENV"
+              ;;
+            *) echo 'Unknown image variant' >&2; exit 1 ;;
+          esac
 
       - name: Check Docker Hub configuration and builder resources
         shell: bash
@@ -52,7 +76,7 @@ jobs:
       - name: Checkout pinned Strata source
         uses: actions/checkout@v6
         with:
-          repository: dambaev/Strata
+          repository: ${{ env.UPSTREAM_REPOSITORY }}
           ref: ${{ env.UPSTREAM_SHA }}
           path: upstream
           persist-credentials: false
@@ -66,15 +90,23 @@ jobs:
           [[ "$actual" == "$UPSTREAM_SHA" ]] || { echo "Unexpected upstream SHA: $actual" >&2; exit 1; }
           src_short="${actual:0:12}"
           image="$DOCKERHUB_NAMESPACE/$IMAGE_REPOSITORY"
+          prefix=""
+          alias=latest
+          if [[ "$VARIANT" == dsv41 ]]; then prefix=dsv41-; alias=dsv41; fi
           {
             echo "image=$image"
             echo "source_sha=$actual"
+            echo "verify_tag=$image:${prefix}build-${GITHUB_SHA:0:12}"
             echo 'tags<<TAGS'
-            echo "$image:latest"
-            echo "$image:src-$src_short"
-            echo "$image:build-${GITHUB_SHA:0:12}"
+            echo "$image:$alias"
+            echo "$image:${prefix}src-$src_short"
+            echo "$image:${prefix}build-${GITHUB_SHA:0:12}"
             echo 'TAGS'
           } >> "$GITHUB_OUTPUT"
+
+      - name: Assemble the verified DeepSeek container context
+        if: env.VARIANT == 'dsv41'
+        run: python3 scripts/prepare_dsv41_context.py --source upstream --out dsv41-build
 
       - name: Configure Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -86,6 +118,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push linux/amd64
+        if: env.VARIANT == 'qwen'
         id: build
         uses: docker/build-push-action@v7
         with:
@@ -105,19 +138,71 @@ jobs:
           provenance: mode=min
           sbom: true
 
+      - name: Build DeepSeek locally for offline smoke checks
+        if: env.VARIANT == 'dsv41'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./dsv41-build/context
+          file: ./dsv41-build/context/Dockerfile
+          platforms: linux/amd64
+          build-args: |
+            FLAVOR=hip
+            STRATA_COMMIT=${{ env.UPSTREAM_SHA }}
+            STRATA_VERSION=0.2.13
+            ENGINE_LABEL=dsv41-0.1.59-linux-x86_64-hip-rx9070
+          load: true
+          tags: ${{ steps.image.outputs.verify_tag }}
+          cache-to: type=local,dest=/tmp/strata-dsv41-build-cache,mode=max
+
+      - name: Check the DeepSeek engine and Terminal without GPU or network
+        if: env.VARIANT == 'dsv41'
+        env:
+          TEST_IMAGE: ${{ steps.image.outputs.verify_tag }}
+        run: bash scripts/smoke_dsv41.sh "$TEST_IMAGE"
+
+      - name: Publish the verified DeepSeek image
+        if: env.VARIANT == 'dsv41'
+        id: dsv41
+        uses: docker/build-push-action@v7
+        with:
+          context: ./dsv41-build/context
+          file: ./dsv41-build/context/Dockerfile
+          platforms: linux/amd64
+          build-args: |
+            FLAVOR=hip
+            STRATA_COMMIT=${{ env.UPSTREAM_SHA }}
+            STRATA_VERSION=0.2.13
+            ENGINE_LABEL=dsv41-0.1.59-linux-x86_64-hip-rx9070
+          push: true
+          tags: ${{ steps.image.outputs.tags }}
+          cache-from: type=local,src=/tmp/strata-dsv41-build-cache
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            ai.strata.upstream=${{ env.UPSTREAM_SHA }}
+            ai.strata.gpu.arch=gfx1201
+            ai.strata.variant=dsv41
+          provenance: mode=min
+          sbom: true
+
       - name: Verify the published image manifest
         shell: bash
         run: |
           set -euo pipefail
-          docker buildx imagetools inspect "${{ steps.image.outputs.image }}:build-${GITHUB_SHA:0:12}"
+          docker buildx imagetools inspect '${{ steps.image.outputs.verify_tag }}'
           {
             echo '## Strata ROCm image published'
             echo '- Image: `${{ steps.image.outputs.image }}`'
             echo '- Strata source: `${{ steps.image.outputs.source_sha }}`'
             echo '- Architecture: `linux/amd64`, HIP `gfx1201`'
-            echo '- OCI digest: `${{ steps.build.outputs.digest }}`'
+            echo '- Variant: `${{ env.VARIANT }}`'
+            echo '- OCI digest: `${{ steps.dsv41.outputs.digest || steps.build.outputs.digest }}`'
             echo '- Tags:'
             echo '```'
             printf '%s\n' '${{ steps.image.outputs.tags }}'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the temporary DeepSeek build cache
+        if: always() && env.VARIANT == 'dsv41'
+        run: rm -rf /tmp/strata-dsv41-build-cache
