@@ -47,8 +47,42 @@ it does not duplicate hundreds of GB of weights.
 The deployment requests the product-specific R9700 resource and checks the
 allocated PCI device `0000:06:00.0`, `gfx1201` and VRAM before starting. It uses
 the existing `strata-api` Secret, a 256K context, native vision, automatic expert
-placement and RAM cache, 16 CPU / 48 GiB limits. CPU experts exceeding available
+placement and RAM cache, 24 CPU / 48 GiB limits. CPU experts exceeding available
 RAM are read from NVMe. Performance needs to be measured on this deployment.
+
+## CPU quota comparison, 15 November 2026
+
+The engine selected 24 physical-core workers, but the original container CPU
+limit was 16 vCPUs. During real inference all 120 observed CFS periods were
+throttled. The limit is now 24 vCPUs; the CPU request remains 4, memory remains
+32 GiB requested / 48 GiB limited, and model, image, context and engine flags
+are unchanged.
+
+A short sequential API comparison used one fixed coding request, temperature
+0, seed 1729 and 256 output tokens. One initial warm-up was excluded. The
+pod's CPU quota was resized in place for the comparison, keeping the same
+process, loaded weights and caches:
+
+| CPU limit | Measured decode | Median | Runs |
+| --- | --- | --- | --- |
+| 16 vCPUs | 5.3, 5.7 tokens/s | 5.5 tokens/s | 2 |
+| 24 vCPUs | 16.2, 16.8 tokens/s | 16.5 tokens/s | 2 |
+| 16 vCPUs, return control with warm cache | 7.0 tokens/s | 7.0 tokens/s | 1 |
+
+The gain was 3.0x against the first median and 2.36x against the warm return
+control. One response hash matched across all three stages. This is a short
+quota experiment on this prompt, not a general workload benchmark: routing and
+cache adaptation can change throughput. CPU throttling was reduced but not
+eliminated (about 81% of CFS periods at 24 vCPUs, versus 93% in the initial
+16-vCPU samples). The final limit was restored to 24 and saved in the
+Deployment template, which recreates the pod once to persist the setting.
+
+Private request, per-run timings, cgroup counters and original manifests:
+`/home/muflo/.local/state/strata-tests/dsv41-cpu24-20261115T144500Z/`.
+
+Upstream also offers `strata launch --tune quick` / `thorough` for DeepSeek,
+testing DSpark and CPU-worker choices. That tuning is separate from this
+single-variable CPU quota change.
 
 Use `/usr/bin/kubectl` (the older `/usr/local/bin/kubectl` renders different
 Kustomize hashes). Prepare the files while Orca is still running:
