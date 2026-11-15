@@ -1,5 +1,16 @@
 # DeepSeek V4.1 Flash image for the R9700
 
+Published and registry-verified on 15 November 2026:
+
+- Image: `moophlo/strata-rocm-r9700:dsv41`
+- Build tag: `dsv41-build-7c64a76d4005`
+- OCI digest: `sha256:50eec886099238f349625b718192fbeeb38abc3e77a36311e24b54d38f0201cf`
+- [Successful GitHub Actions run](https://github.com/moophlo/strata-rocm-r9700/actions/runs/43695715705)
+
+The alias, source tag and build tag resolve to the same OCI index, containing
+the `linux/amd64` image and its attestations. The offline engine and Terminal
+smoke checks passed. GPU inference has not been run with this image.
+
 The existing **Build and publish Strata ROCm (R9700)** workflow accepts a
 `variant` input. Choose `dsv41` to publish `moophlo/strata-rocm-r9700:dsv41`.
 The `qwen` choice and push-triggered builds retain the original source and tags.
