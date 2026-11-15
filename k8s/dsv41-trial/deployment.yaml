@@ -55,6 +55,10 @@ spec:
           value: '8080'
         - name: PRESET
           value: dsv41
+        - name: STRATA_SET
+          value: ssd-cache=44
+        - name: TUNE
+          value: skip
         - name: API_KEY
           valueFrom:
             secretKeyRef:
@@ -70,7 +74,7 @@ spec:
             amd.com/gpu-ai-pro-r9700: '1'
           limits:
             cpu: '24'
-            memory: 48Gi
+            memory: 54Gi
             amd.com/gpu-ai-pro-r9700: '1'
         securityContext:
           allowPrivilegeEscalation: false

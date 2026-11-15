@@ -27,7 +27,8 @@ assessment. The engine's default **Faster** profile uses **5 of 6 experts per
 token** on this single-R9700 setup. DSpark auto leaves the drafter unloaded
 because most experts reside outside GPU memory. The initial RAM store is
 38.3 GB; 2577 experts (22.55 GB) are resident in VRAM, with 5.86 GB of other
-weights and 0.24 GB of caches. No explicit tuning overrides were added.
+weights and 0.24 GB of caches. The current explicit RAM budget and tuning
+result are documented below.
 
 Private receipt, previous live manifests, startup evidence and API results:
 `/home/muflo/.local/state/strata-tests/dsv41-20261115T090014Z/`.
@@ -46,17 +47,17 @@ it does not duplicate hundreds of GB of weights.
 
 The deployment requests the product-specific R9700 resource and checks the
 allocated PCI device `0000:06:00.0`, `gfx1201` and VRAM before starting. It uses
-the existing `strata-api` Secret, a 256K context, native vision, automatic expert
-placement and RAM cache, 24 CPU / 48 GiB limits. CPU experts exceeding available
-RAM are read from NVMe. Performance needs to be measured on this deployment.
+the existing `strata-api` Secret, a 256K context, native vision, automatic GPU
+expert placement, a 44 GB expert RAM store, and 24 CPU / 54 GiB limits. CPU
+experts exceeding the RAM store are read from NVMe.
 
 ## CPU quota comparison, 15 November 2026
 
 The engine selected 24 physical-core workers, but the original container CPU
 limit was 16 vCPUs. During real inference all 120 observed CFS periods were
-throttled. The limit is now 24 vCPUs; the CPU request remains 4, memory remains
-32 GiB requested / 48 GiB limited, and model, image, context and engine flags
-are unchanged.
+throttled. The limit is now 24 vCPUs; the CPU request remains 4. During this
+CPU comparison memory was 32 GiB requested / 48 GiB limited, and model, image,
+context and engine flags were unchanged. The later RAM change is below.
 
 A short sequential API comparison used one fixed coding request, temperature
 0, seed 1729 and 256 output tokens. One initial warm-up was excluded. The
@@ -80,9 +81,63 @@ Deployment template, which recreates the pod once to persist the setting.
 Private request, per-run timings, cgroup counters and original manifests:
 `/home/muflo/.local/state/strata-tests/dsv41-cpu24-20261115T144500Z/`.
 
-Upstream also offers `strata launch --tune quick` / `thorough` for DeepSeek,
-testing DSpark and CPU-worker choices. That tuning is separate from this
-single-variable CPU quota change.
+## RAM budget and official DeepSeek tuning, 15 November 2026
+
+The container limit is now **54 GiB = 57.98 GB**; its request remains 32 GiB.
+`STRATA_SET=ssd-cache=44` explicitly budgets **44 decimal GB** for the expert
+RAM store. The container limit includes every other allocation, so it must
+not be used as the store size. Raising only the Kubernetes limit would leave
+the engine's automatic store sizing based on the host's free RAM.
+
+The store now has 4,283 slots instead of 3,666 at the previous 37.7 GB budget.
+Startup preloaded 33.3 GB of hot experts, versus 28.5 GB previously. GPU
+placement remains 2,577 experts / 22.55 GB on the R9700; the CPU quota and
+256K context are unchanged.
+
+Ran the image's official `tools/dsv41/tune.py` through `TUNE=thorough`, following
+[upstream's DeepSeek guide](https://github.com/Niko1221/Strata/blob/main/docs/DEEPSEEK41.md).
+It loads the model separately for each trial and retains improvements above
+5%:
+
+| Trial | Short tuner decode, tokens/s |
+| --- | --- |
+| Standard settings, DSpark auto | 13.0 |
+| DSpark forced on, confidence 0.65 | 10.4 |
+| Explicit 24 CPU workers | 4.5 |
+| All 32 logical CPU workers | 13.2 |
+
+No candidate passed its improvement threshold. The short draft-block trial
+was skipped because DSpark was not retained. The engine remains at its
+standard settings, DSpark auto and automatically selected 24 CPU workers.
+The short fixed question and large variation between equivalent 24-worker
+settings limit the precision of this ranking; this does not establish that
+24 explicit workers are intrinsically slower than 24 automatic workers.
+
+A separate API check reused the exact coding request from the CPU experiment
+(temperature 0, seed 1729, 256 output tokens). Excluding one cold warm-up
+(11.0 tokens/s), two samples gave **20.9 and 27.2 tokens/s**, median **24.05**,
+versus the earlier 24-vCPU median of 16.5. This is a short sequential
+comparison with progressively warmer caches, not a controlled attribution
+of the entire gain to RAM. During these checks the container peaked at
+49.42 GB, with no memory-limit hits or OOM kills; host available RAM was
+about 10.6 GB after the coding requests.
+
+The final restart was verified without repeating tuning: local and public
+health/model discovery succeeded, anonymous discovery returned 401, text
+inference answered `Paris`, and tool calling emitted `add(a=2, b=3)`. The
+container is Ready with zero restarts and no OOM events; this final startup
+and smoke check peaked at 50.18 GB. The local monitor forward on port 8080
+was restored. ComfyUI remains 2/2 Ready with zero restarts.
+
+`TUNE=skip` and the saved launch preset disable repeated measurements on
+restart. To repeat during a maintenance window, temporarily use
+`TUNE=thorough` and `RETUNE=1`; serving is unavailable during the trials.
+Restore `TUNE=skip`, remove `RETUNE`, and set the saved launch preset's
+`tune` field back to `skip` afterwards (this engine version retains it).
+Do not run a second engine alongside the serving process on the same GPU.
+
+Private baseline snapshots, tuner output, API samples and resource counters:
+`/home/muflo/.local/state/strata-tests/dsv41-tune-20261115T150452Z/`.
 
 Use `/usr/bin/kubectl` (the older `/usr/local/bin/kubectl` renders different
 Kustomize hashes). Prepare the files while Orca is still running:
