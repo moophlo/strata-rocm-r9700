@@ -9,7 +9,9 @@ Published and registry-verified on 15 November 2026:
 
 The alias, source tag and build tag resolve to the same OCI index, containing
 the `linux/amd64` image and its attestations. The offline engine and Terminal
-smoke checks passed. GPU inference has not been run with this image.
+smoke checks passed. The subsequent [Kubernetes trial](k8s/dsv41-trial/README.md)
+also passed GPU loading, authenticated API, text, tool calling and native Vision
+checks on the R9700.
 
 The existing **Build and publish Strata ROCm (R9700)** workflow accepts a
 `variant` input. Choose `dsv41` to publish `moophlo/strata-rocm-r9700:dsv41`.
@@ -43,6 +45,6 @@ For the Kubernetes trial, adapt the GPU guard to the new entrypoint, request
 The upstream entrypoint can migrate older model directories; mounting the
 existing Qwen data as `/data` would therefore modify their layout.
 
-Publishing the image does not change the active Kubernetes deployment or route
-`llm.mufloland.it` to DeepSeek. GPU loading, authenticated API, model output and
-rollback must be checked during the later deployment exercise.
+The [Kubernetes trial and rollback procedure](k8s/dsv41-trial/README.md) describe
+the deployed configuration. `llm.mufloland.it` now serves DeepSeek through the
+existing authenticated endpoint.

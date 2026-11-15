@@ -1,0 +1,16 @@
+# Apply only after the DeepSeek deployment is Ready and passes direct API checks.
+# The existing Ingress and LiteLLM use this Service as their stable endpoint.
+apiVersion: v1
+kind: Service
+metadata:
+  name: strata-orca-trial
+  namespace: vllm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: strata-dsv41-trial
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

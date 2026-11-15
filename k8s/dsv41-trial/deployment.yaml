@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: strata-dsv41-trial
+  namespace: vllm
+  labels: &id001
+    app.kubernetes.io/name: strata-dsv41-trial
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: 18000
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: *id001
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      automountServiceAccountToken: false
+      hostNetwork: false
+      dnsPolicy: ClusterFirst
+      nodeSelector:
+        kubernetes.io/hostname: diapolinux.mufloland.it
+      tolerations:
+      - key: gpu
+        operator: Equal
+        value: 'true'
+        effect: NoSchedule
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 120
+      containers:
+      - name: strata
+        image: moophlo/strata-rocm-r9700@sha256:50eec886099238f349625b718192fbeeb38abc3e77a36311e24b54d38f0201cf
+        imagePullPolicy: IfNotPresent
+        command:
+        - /opt/strata/terminal/python/bin/python3
+        - /runtime/launch.py
+        env:
+        - name: FAMILY
+          value: deepseek41
+        - name: MODEL
+          value: ist-das-2.00bpw
+        - name: CONTEXT
+          value: '262144'
+        - name: VISION
+          value: 'on'
+        - name: GPU
+          value: '0'
+        - name: PORT
+          value: '8080'
+        - name: PRESET
+          value: dsv41
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: strata-api
+              key: API_KEY
+        ports:
+        - name: http
+          containerPort: 8080
+        resources:
+          requests:
+            cpu: '4'
+            memory: 32Gi
+            amd.com/gpu-ai-pro-r9700: '1'
+          limits:
+            cpu: '16'
+            memory: 48Gi
+            amd.com/gpu-ai-pro-r9700: '1'
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - IPC_LOCK
+        readinessProbe:
+          exec: &id002
+            command:
+            - /opt/strata/terminal/python/bin/python3
+            - /runtime/readiness.py
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          exec: *id002
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 720
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 10
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: runtime
+          mountPath: /runtime
+          readOnly: true
+        - name: shm
+          mountPath: /dev/shm
+      volumes:
+      - name: data
+        hostPath:
+          path: /media/muflo/2TBfast1/strata-cache/dsv41
+          type: Directory
+      - name: runtime
+        configMap:
+          name: strata-dsv41-runtime
+      - name: shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 2Gi

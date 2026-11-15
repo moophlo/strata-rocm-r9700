@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: vllm
+resources:
+- deployment.yaml
+- service.yaml
+configMapGenerator:
+- name: strata-dsv41-runtime
+  files:
+  - runtime/gpu_guard.py
+  - runtime/readiness.py
+  - runtime/launch.py

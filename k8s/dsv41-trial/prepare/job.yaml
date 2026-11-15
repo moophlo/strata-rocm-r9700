@@ -1,0 +1,63 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: strata-dsv41-prepare
+  namespace: vllm
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: strata-dsv41-prepare
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: diapolinux.mufloland.it
+      tolerations:
+        - key: gpu
+          operator: Equal
+          value: 'true'
+          effect: NoSchedule
+      dnsPolicy: None
+      dnsConfig:
+        nameservers: [1.1.1.1, 1.0.0.1]
+        options:
+          - name: ndots
+            value: '1'
+      containers:
+        - name: prepare
+          image: moophlo/strata-rocm-r9700@sha256:50eec886099238f349625b718192fbeeb38abc3e77a36311e24b54d38f0201cf
+          command: [/opt/strata/terminal/python/bin/python3, /prepare/prepare.py]
+          workingDir: /opt/strata/terminal
+          env:
+            - name: STRATA_DL_CONNECTIONS
+              value: '16'
+          resources:
+            requests:
+              cpu: '1'
+              memory: 1Gi
+            limits:
+              cpu: '3'
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: script
+              mountPath: /prepare
+              readOnly: true
+      volumes:
+        - name: data
+          hostPath:
+            path: /media/muflo/2TBfast1/strata-cache/dsv41
+            type: DirectoryOrCreate
+        - name: script
+          configMap:
+            name: strata-dsv41-prepare

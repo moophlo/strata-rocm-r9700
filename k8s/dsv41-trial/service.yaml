@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: strata-dsv41-trial
+  namespace: vllm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: strata-dsv41-trial
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
