@@ -3,6 +3,31 @@
 Image: `moophlo/strata-rocm-r9700@sha256:50eec886099238f349625b718192fbeeb38abc3e77a36311e24b54d38f0201cf`.
 Namespace: `vllm`. Deployment and direct Service: `strata-dsv41-trial`.
 
+## Active DSpark configuration, 17 November 2026
+
+DSpark is now **on**, maximum draft block **2**, confidence **0.65**. The
+Deployment persists this with:
+
+```text
+STRATA_SET=ssd-cache=44 dspark=on dspark-block=2 dspark-conf=0.65
+```
+
+CPU quota stays 32, with 24 automatically selected physical-core workers;
+RAM cache 44 GB, memory limit 54 GiB, context 262144, vision, five-expert Faster
+mode, pinned image and model are unchanged. Turbo Boost remains disabled.
+The native process argv and saved launch settings were checked after rollout.
+
+Operational checks with 128-token warm-up and 512-token responses measured
+**25.4 tokens/s coding, 21.6 technical Italian and 20.0 long-document analysis**.
+These are single samples per case. Health, authentication, text and tools passed;
+vision returned `DEEPSPEK 7412`, one-letter OCR mismatch recorded in the report.
+The pod and ComfyUI are Ready with zero restarts and no observed OOM events.
+
+This applies the faster DSpark candidate at the user's explicit request after
+reviewing the screening results and the limits of the earlier arithmetic gate.
+The earlier failed checks remain in the report. Operational verification and
+rollback are documented in [the updated report](optimize/RESULTS-2026-11-17.md#dspark-deployment-after-review).
+
 ## Initial verification, 15 November 2026
 
 `strata-dsv41-trial` is 1/1 Ready, zero restarts. `strata-orca-trial` and the
@@ -24,8 +49,8 @@ Verified through the direct Service and `https://llm.mufloland.it`:
 
 These are functional smoke checks, not a benchmark or a full-context quality
 assessment. The engine's default **Faster** profile uses **5 of 6 experts per
-token** on this single-R9700 setup. DSpark auto leaves the drafter unloaded
-because most experts reside outside GPU memory. The initial RAM store is
+token** on this single-R9700 setup. At the initial launch, DSpark auto left the
+drafter unloaded because most experts resided outside GPU memory. The initial RAM store is
 38.3 GB; 2577 experts (22.55 GB) are resident in VRAM, with 5.86 GB of other
 weights and 0.24 GB of caches. The current explicit RAM budget and tuning
 result are documented below.
@@ -51,7 +76,7 @@ the existing `strata-api` Secret, a 256K context, native vision, automatic GPU
 expert placement, a 44 GB expert RAM store, and 32 CPU / 54 GiB limits (updated 17 November). CPU
 experts exceeding the RAM store are read from NVMe.
 
-## Controlled optimization, 17 November 2026
+## CPU-only confirmation before DSpark activation, 17 November 2026
 
 The current CPU limit is **32**, with **24 automatically selected physical-core
 workers** and Turbo Boost still disabled. A longer, fixed three-case benchmark
@@ -64,7 +89,8 @@ cache 44 GB, model, 256K context, vision and five-expert mode are unchanged.
 The 18-configuration screen tested DSpark blocks/confidence, CPU placement,
 RAM budgets, cache policies, NVMe reader counts and lookahead. DSpark's faster
 screening candidate failed the arithmetic acceptance check on both independent
-starts and was rejected. **DSpark remains auto/unloaded**. Cache 48 GB brought
+starts and was initially rejected. At that stage DSpark stayed auto/unloaded.
+Cache 48 GB brought
 less than 1% gain, so the explicit 44 GB store was retained.
 
 The new pod passed local/public health, authentication, text, tools and native

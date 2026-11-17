@@ -56,7 +56,7 @@ spec:
         - name: PRESET
           value: dsv41
         - name: STRATA_SET
-          value: ssd-cache=44
+          value: ssd-cache=44 dspark=on dspark-block=2 dspark-conf=0.65
         - name: TUNE
           value: skip
         - name: API_KEY
