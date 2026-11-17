@@ -73,7 +73,7 @@ spec:
             memory: 32Gi
             amd.com/gpu-ai-pro-r9700: '1'
           limits:
-            cpu: '24'
+            cpu: '32'
             memory: 54Gi
             amd.com/gpu-ai-pro-r9700: '1'
         securityContext:

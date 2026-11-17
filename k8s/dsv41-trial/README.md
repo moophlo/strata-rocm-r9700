@@ -3,7 +3,7 @@
 Image: `moophlo/strata-rocm-r9700@sha256:50eec886099238f349625b718192fbeeb38abc3e77a36311e24b54d38f0201cf`.
 Namespace: `vllm`. Deployment and direct Service: `strata-dsv41-trial`.
 
-## Verified active state, 15 November 2026
+## Initial verification, 15 November 2026
 
 `strata-dsv41-trial` is 1/1 Ready, zero restarts. `strata-orca-trial` and the
 original `strata` Deployment are both at zero replicas. The historical Service
@@ -48,8 +48,30 @@ it does not duplicate hundreds of GB of weights.
 The deployment requests the product-specific R9700 resource and checks the
 allocated PCI device `0000:06:00.0`, `gfx1201` and VRAM before starting. It uses
 the existing `strata-api` Secret, a 256K context, native vision, automatic GPU
-expert placement, a 44 GB expert RAM store, and 24 CPU / 54 GiB limits. CPU
+expert placement, a 44 GB expert RAM store, and 32 CPU / 54 GiB limits (updated 17 November). CPU
 experts exceeding the RAM store are read from NVMe.
+
+## Controlled optimization, 17 November 2026
+
+The current CPU limit is **32**, with **24 automatically selected physical-core
+workers** and Turbo Boost still disabled. A longer, fixed three-case benchmark
+and separate A/B/B/A engine starts confirmed **+10.1% decode throughput**
+(15.13 -> 16.65 tokens/s geometric mean). Per-case gains were 8.6% coding,
+11.5% technical Italian and 10.2% long-document analysis. CFS throttled periods
+fell from about 87% to 0% in the candidate samples. CPU request 4, memory 32Gi/54Gi,
+cache 44 GB, model, 256K context, vision and five-expert mode are unchanged.
+
+The 18-configuration screen tested DSpark blocks/confidence, CPU placement,
+RAM budgets, cache policies, NVMe reader counts and lookahead. DSpark's faster
+screening candidate failed the arithmetic acceptance check on both independent
+starts and was rejected. **DSpark remains auto/unloaded**. Cache 48 GB brought
+less than 1% gain, so the explicit 44 GB store was retained.
+
+The new pod passed local/public health, authentication, text, tools and native
+vision checks. It has zero restarts, the R9700 allocation is Healthy, and ComfyUI
+remains 2/2 Ready with zero restarts. The local monitor forward is restored.
+The complete measurements, failed/excluded attempts, limits and CPU-only
+rollback are in [the optimization report](optimize/RESULTS-2026-11-17.md).
 
 ## CPU quota comparison, 15 November 2026
 
