@@ -3,6 +3,28 @@
 Image: `moophlo/strata-rocm-r9700@sha256:50eec886099238f349625b718192fbeeb38abc3e77a36311e24b54d38f0201cf`.
 Namespace: `vllm`. Deployment and direct Service: `strata-dsv41-trial`.
 
+## Active 512K context, 19 November 2026
+
+`CONTEXT=524288` is now deployed with the same pinned image, model and DSpark
+settings below. A synthetic **519,979-token** prompt recovered all three
+verification codes placed at 10%, 50% and 95% of the input. The cold response
+took **688.354 s**; the identical repeat reused **519,978 tokens** and completed
+in **3.479 s**. Container memory peaked at **55.16 GB** against the **57.98 GB**
+limit, with no memory-limit hits or OOM events.
+
+At startup, context caches increased from 0.24 to 0.49 GB and resident experts
+decreased from 2,029 to 1,995. Turbo remains disabled. This is one near-capacity
+retrieval check and a cache replay, not a general quality assessment at 512K.
+The cold initial read takes many minutes; full-context decode on these short
+33-token answers measured 11.5 and 15.5 tokens/s.
+
+The [512K verification report](CONTEXT-512K-2026-11-19.md) records the matched
+short requests, public gateway verification, client metadata and rollback.
+LiteLLM Helm values and the live OpenCode `coding` catalog now declare 524288.
+The gateway Ingress body limit is 16 MB after a 2 MB request exposed HTTP 413.
+The public replay passed with all codes correct; a subsequent 520,027-token
+conversation turn reused 520,012 tokens and read only 15 new tokens.
+
 ## Active DSpark configuration, 17 November 2026
 
 DSpark is now **on**, maximum draft block **2**, confidence **0.65**. The
@@ -12,9 +34,10 @@ Deployment persists this with:
 STRATA_SET=ssd-cache=44 dspark=on dspark-block=2 dspark-conf=0.65
 ```
 
-CPU quota stays 32, with 24 automatically selected physical-core workers;
-RAM cache 44 GB, memory limit 54 GiB, context 262144, vision, five-expert Faster
-mode, pinned image and model are unchanged. Turbo Boost remains disabled.
+At that rollout, CPU quota stayed 32, with 24 automatically selected physical-core
+workers; RAM cache 44 GB, memory limit 54 GiB, context 262144, vision, five-expert
+Faster mode, pinned image and model were unchanged. The context was subsequently
+raised to 524288 as documented above. Turbo Boost remains disabled.
 The native process argv and saved launch settings were checked after rollout.
 
 Operational checks with 128-token warm-up and 512-token responses measured
@@ -72,7 +95,7 @@ it does not duplicate hundreds of GB of weights.
 
 The deployment requests the product-specific R9700 resource and checks the
 allocated PCI device `0000:06:00.0`, `gfx1201` and VRAM before starting. It uses
-the existing `strata-api` Secret, a 256K context, native vision, automatic GPU
+the existing `strata-api` Secret, a 512K context, native vision, automatic GPU
 expert placement, a 44 GB expert RAM store, and 32 CPU / 54 GiB limits (updated 17 November). CPU
 experts exceeding the RAM store are read from NVMe.
 

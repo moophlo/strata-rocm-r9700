@@ -46,7 +46,7 @@ spec:
         - name: MODEL
           value: ist-das-2.00bpw
         - name: CONTEXT
-          value: '262144'
+          value: '524288'
         - name: VISION
           value: 'on'
         - name: GPU
